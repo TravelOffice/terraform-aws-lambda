@@ -1,30 +1,32 @@
 variable "SUBNETS" {
-    description = "VPC subnets"
+  description = "VPC subnets"
 }
 
 variable "VPC_ID" {
-    description = "VPC id"
+  description = "VPC id"
 }
 variable "LAMBDA_LAYER_ARNS" {
-    description = "List lambda layer arns"
+  description = "List lambda layer arns"
 }
 variable "LAMBDA_FUNCTIONS" {
-    description = "List argument of lambda functions"
+  description = "List argument of lambda functions"
 }
 variable "ENV" {
-    description = "Environment"
+  description = "Environment"
 }
 variable "FEATURE_NAME" {
-    description = "Feature name"
-}
-variable "IAM_ROLES" {
-    description = "List IAM roles for lambda functions"
+  description = "Feature name"
 }
 variable "ENV_VARS" {
-    description = "List environment of lambda functions"
+  description = "List environment of lambda functions"
 }
 variable "TAGS" {
-    description = "List tags"
+  description = "List tags"
+}
+
+# Get the custom policies database
+data "http" "custom_policy" {
+  url = "https://raw.githubusercontent.com/TravelOffice/terraform-policy-database/master/custom_policy.json"
 }
 locals {
   lambda_default_config = {
@@ -34,11 +36,42 @@ locals {
     timeout       = 3
     architecture  = "arm64"
     log_retention = 30
-    iam_role      = "standard_lambda_role"
-    env_vars      = "standard_vars"
+    permission = {
+      custom_policies = ["LambdaStandardRole"]
+      aws_policies    = []
+    },
+    env_vars = "standard_vars"
   }
   root_path = format("%s/../../..", path.root)
+  lambda_functions_roles = {
+    for key, value in var.LAMBDA_FUNCTIONS : key => {
+      path          = value.path
+      handler       = "lambda.handler"
+      memory_size   = try(value.memory_size, local.lambda_default_config.memory_size)
+      runtime       = try(value.runtime, local.lambda_default_config.runtime)
+      timeout       = try(value.timeout, local.lambda_default_config.timeout)
+      architecture  = try(value.architecture, local.lambda_default_config.architecture)
+      log_retention = try(value.log_retention, local.lambda_default_config.log_retention)
+      permission = {
+        custom_policies = try(value.permission.custom_policies, local.lambda_default_config.permission.custom_policies)
+        aws_policies    = try(value.permission.aws_policies, local.lambda_default_config.permission.aws_policies)
+      },
+      env_vars = try(value.env_vars, local.lambda_default_config.env_vars)
+      layers   = value.layers
+      custom_policies = flatten([
+        for policy in value.permission.custom_policies : [
+          jsondecode(data.http.custom_policy.body)[policy]
+        ]
+      ])
+      aws_policies = flatten([
+        for policy in value.permission.aws_policies : [
+          format("%s/%s", "arn:aws:iam::aws:policy", policy)
+        ]
+      ])
+    }
+  }
 }
+
 resource "aws_security_group" "lambda_sg" {
   name_prefix = "lambda_sg"
   description = "Allow all outbound traffic"
@@ -67,19 +100,50 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
   name              = "/aws/lambda/${var.ENV}-${var.FEATURE_NAME}-${each.key}"
   retention_in_days = try(each.value.log_retention, local.lambda_default_config.log_retention)
   tags              = var.TAGS
-
 }
+
+data "aws_iam_policy_document" "assume_role_policy" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_policy" "policy" {
+  for_each    = local.lambda_functions_roles
+  name_prefix = lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}")
+
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = "${each.value.custom_policies}"
+  })
+
+  tags = var.TAGS
+}
+
+resource "aws_iam_role" "role" {
+  for_each            = local.lambda_functions_roles
+  name                = lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}")
+  assume_role_policy  = data.aws_iam_policy_document.assume_role_policy.json
+  managed_policy_arns = concat([aws_iam_policy.policy[each.key].arn], each.value.aws_policies)
+  tags                = var.TAGS
+}
+
 resource "aws_lambda_function" "lambda" {
-  for_each         = var.LAMBDA_FUNCTIONS
+  for_each         = local.lambda_functions_roles
   filename         = format("%s/%s", local.root_path, "deploy/${each.key}.zip")
-  function_name    = "${var.ENV}-${var.FEATURE_NAME}-${each.key}"
-  role             = var.IAM_ROLES[try(each.value.iam_role, local.lambda_default_config.iam_role)]
-  memory_size      = try(each.value.memory_size, local.lambda_default_config.memory_size)
-  handler          = try(each.value.handler, local.lambda_default_config.handler)
+  function_name    = lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}")
+  role             = aws_iam_role.role[each.key].arn
+  memory_size      = each.value.memory_size
+  handler          = each.value.handler
   source_code_hash = filebase64sha256(format("%s/%s", local.root_path, "deploy/${each.key}.zip"))
-  architectures    = [try(each.value.architecture, local.lambda_default_config.architecture)]
-  runtime          = try(each.value.runtime, local.lambda_default_config.runtime)
-  timeout          = try(each.value.timeout, local.lambda_default_config.timeout)
+  architectures    = [each.value.architecture]
+  runtime          = each.value.runtime
+  timeout          = each.value.timeout
   depends_on = [
     aws_cloudwatch_log_group.lambda_log_group
   ]
@@ -92,7 +156,7 @@ resource "aws_lambda_function" "lambda" {
     for layer in each.value.layers : var.LAMBDA_LAYER_ARNS[layer]
   ]
   environment {
-    variables = var.ENV_VARS[try(each.value.env_vars, local.lambda_default_config.env_vars)]
+    variables = var.ENV_VARS[each.value.env_vars]
   }
 
   tags = var.TAGS
