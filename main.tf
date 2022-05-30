@@ -155,6 +155,9 @@ resource "aws_lambda_function" "lambda" {
   layers = [
     for layer in each.value.layers : var.LAMBDA_LAYER_ARNS[layer]
   ]
+  tracing_config = {
+    mode = "Active"
+  }
   environment {
     variables = var.ENV_VARS[each.value.env_vars]
   }
