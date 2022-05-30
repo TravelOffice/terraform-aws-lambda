@@ -35,7 +35,7 @@ locals {
     runtime       = "nodejs14.x"
     timeout       = 3
     architecture  = "arm64"
-    log_retention = 30
+    log_retention = var.ENV == "dev" ? 1 : 30
     permission = {
       custom_policies = ["LambdaStandardRole"]
       aws_policies    = []
