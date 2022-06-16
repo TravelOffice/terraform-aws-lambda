@@ -5,6 +5,9 @@ variable "SUBNETS" {
 variable "VPC_ID" {
   description = "VPC id"
 }
+variable "LAMBDA_SG_ID" {
+  description = "ID of Security group for Lambda functions"
+}
 variable "LAMBDA_LAYER_ARNS" {
   description = "List lambda layer arns"
 }
@@ -72,22 +75,6 @@ locals {
   }
 }
 
-resource "aws_security_group" "lambda_sg" {
-  name_prefix = "lambda_sg"
-  description = "Allow all outbound traffic"
-  vpc_id      = var.VPC_ID
-
-  egress {
-    from_port        = 0
-    to_port          = 0
-    protocol         = "-1"
-    cidr_blocks      = ["0.0.0.0/0"]
-    ipv6_cidr_blocks = ["::/0"]
-  }
-  tags = var.TAGS
-
-}
-
 data "archive_file" "lambda_zip" {
   for_each    = var.LAMBDA_FUNCTIONS
   type        = "zip"
@@ -150,7 +137,7 @@ resource "aws_lambda_function" "lambda" {
   vpc_config {
     # Every subnet should be able to reach an EFS mount target in the same Availability Zone. Cross-AZ mounts are not permitted.
     subnet_ids         = var.SUBNETS
-    security_group_ids = [aws_security_group.lambda_sg.id]
+    security_group_ids = [var.LAMBDA_SG_ID]
   }
   layers = [
     for layer in each.value.layers : var.LAMBDA_LAYER_ARNS[layer]
