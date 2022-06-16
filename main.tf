@@ -142,7 +142,7 @@ resource "aws_lambda_function" "lambda" {
   layers = [
     for layer in each.value.layers : var.LAMBDA_LAYER_ARNS[layer]
   ]
-  tracing_config = {
+  tracing_config {
     mode = "Active"
   }
   environment {
