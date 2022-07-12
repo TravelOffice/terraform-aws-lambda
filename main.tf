@@ -49,7 +49,7 @@ locals {
   lambda_functions_roles = {
     for key, value in var.LAMBDA_FUNCTIONS : key => {
       path          = value.path
-      handler       = "lambda.handler"
+      handler       = try(value.handler, local.lambda_default_config.handler)
       memory_size   = try(value.memory_size, local.lambda_default_config.memory_size)
       runtime       = try(value.runtime, local.lambda_default_config.runtime)
       timeout       = try(value.timeout, local.lambda_default_config.timeout)
