@@ -73,6 +73,8 @@ locals {
       ])
     }
   }
+  max_role_name_length = 38
+  max_lambda_name_length = 64
 }
 
 data "archive_file" "lambda_zip" {
@@ -84,7 +86,7 @@ data "archive_file" "lambda_zip" {
 
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
   for_each          = var.LAMBDA_FUNCTIONS
-  name              = "/aws/lambda/${var.ENV}-${var.FEATURE_NAME}-${each.key}"
+  name_prefix       = "/aws/lambda/${var.ENV}-${var.FEATURE_NAME}-${each.key}"
   retention_in_days = try(each.value.log_retention, local.lambda_default_config.log_retention)
   tags              = var.TAGS
 }
@@ -114,7 +116,7 @@ resource "aws_iam_policy" "policy" {
 
 resource "aws_iam_role" "role" {
   for_each            = local.lambda_functions_roles
-  name                = lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}")
+  name_prefix         = substr(lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}"), 0, local.max_role_name_length - 1)
   assume_role_policy  = data.aws_iam_policy_document.assume_role_policy.json
   managed_policy_arns = concat([aws_iam_policy.policy[each.key].arn], each.value.aws_policies)
   tags                = var.TAGS
@@ -123,7 +125,7 @@ resource "aws_iam_role" "role" {
 resource "aws_lambda_function" "lambda" {
   for_each         = local.lambda_functions_roles
   filename         = format("%s/%s", local.root_path, "deploy/${each.key}.zip")
-  function_name    = lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}")
+  function_name    = substr(lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}"), 0, local.max_lambda_name_length - 1)
   role             = aws_iam_role.role[each.key].arn
   memory_size      = each.value.memory_size
   handler          = each.value.handler
