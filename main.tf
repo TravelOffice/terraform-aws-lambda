@@ -73,7 +73,7 @@ locals {
       ])
     }
   }
-  max_role_name_length = 38
+  max_role_name_length   = 38
   max_lambda_name_length = 64
 }
 
@@ -85,8 +85,10 @@ data "archive_file" "lambda_zip" {
 }
 
 resource "aws_cloudwatch_log_group" "lambda_log_group" {
-  for_each          = var.LAMBDA_FUNCTIONS
-  name_prefix       = "/aws/lambda/${var.ENV}-${var.FEATURE_NAME}-${each.key}"
+  for_each = var.LAMBDA_FUNCTIONS
+  name = format("%s/%s", "/aws/lambda",
+    substr(lower("${var.ENV}-${var.FEATURE_NAME}-${each.key}"), 0, local.max_lambda_name_length - 1)
+  )
   retention_in_days = try(each.value.log_retention, local.lambda_default_config.log_retention)
   tags              = var.TAGS
 }
