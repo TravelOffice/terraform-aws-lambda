@@ -29,7 +29,7 @@ variable "TAGS" {
 
 # Get the custom policies database
 data "http" "custom_policy" {
-  url = "https://raw.githubusercontent.com/TravelOffice/terraform-policy-database/master/custom_policy.json"
+  url = "https://raw.githubusercontent.com/TravelOffice/infrastructure-constant/master/custom_policy.json"
 }
 locals {
   lambda_default_config = {
