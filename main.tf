@@ -35,7 +35,7 @@ locals {
   lambda_default_config = {
     handler       = "lambda.handler"
     memory_size   = 128
-    runtime       = "nodejs14.x"
+    runtime       = "nodejs18.x"
     timeout       = 3
     architecture  = "arm64"
     log_retention = var.ENV == "dev" ? 1 : 30
